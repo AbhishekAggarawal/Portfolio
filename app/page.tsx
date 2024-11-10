@@ -69,7 +69,7 @@ const Home = () => {
                to meet diverse project needs."
               </p>
               <div className="flex flex-col xl:flex-row items-center gap-8">
-                <Link href="https://drive.google.com/file/d/1-dOIsEJXCMohUtW_YJmrJH98BGbRpYN2/view?usp=sharing" target="_blank">
+                <Link href="https://drive.google.com/file/d/1SpVEEuf9CTFe3i1NsxtE7mvVoZG0rWoK/view?usp=sharing" target="_blank">
                 <Button variant="outline" size="lg" className="uppercase flex items-center gap-2">
                   <span>
                     Download Resume
