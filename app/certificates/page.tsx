@@ -45,7 +45,7 @@ const projects = [
       {name: 'Real-world Applications'},
       {name: 'Code Efficiency and Data Handling'}
     ],
-    image: '/assets/certificates/certificate3.jpg',
+    image: '/assets/certificates/certificate3.png',
     live: "https://drive.google.com/file/d/1fbBtLqpcI6AyilSyMsCVBfCEEHSRXDt8/view?usp=sharing"
   },
   
