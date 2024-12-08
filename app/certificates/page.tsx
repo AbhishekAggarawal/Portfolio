@@ -35,6 +35,19 @@ const projects = [
     image: '/assets/certificates/certificate2.jpg',
     live: "https://drive.google.com/file/d/16s3fdduhxwn_Q39RnVM3HlAOfg1Z1kzi/view?usp=sharing"
   },
+  {
+    num: '03' , 
+    course: 'The Joy of Computing using Python (IIT Ropar)',
+    description: "The Joy of Computing using Python is an NPTEL course designed to teach the basics of Python programming. It focuses on problem-solving and practical applications, making learning enjoyable and accessible for beginners.",
+    outcome : [
+      {name: ' Programming Basics'},
+      {name: 'Problem Solving'},
+      {name: 'Real-world Applications'},
+      {name: 'Code Efficiency and Data Handling'}
+    ],
+    image: '/assets/certificates/certificate3.jpg',
+    live: "https://drive.google.com/file/d/1fbBtLqpcI6AyilSyMsCVBfCEEHSRXDt8/view?usp=sharing"
+  },
   
 ]
 
