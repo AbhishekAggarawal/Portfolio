@@ -65,11 +65,7 @@ const MobileNav = () => {
                     </Link>
                     )
                 })}
-                <Link href="/contact">
-        <Button>
-            Hire me
-        </Button>
-        </Link>
+               
             </nav>
 
         </SheetContent>
