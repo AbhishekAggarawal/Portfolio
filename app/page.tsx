@@ -12,7 +12,7 @@ import Link from "next/link";
 const Home = () => {
   const [loopNum , setLoopNum] = useState(0);
   const [isDeleting , setIsDeleting] = useState(false);
-  const toRotate = [" Web Developer!" ,"bhishek Aggarwal." , " Software Engineer!" , "Data Analyst!"];
+  const toRotate = ["bhishek Aggarwal." , " Web Developer!" , " Software Engineer!" , " Data Analyst!"];
   const [text , setText] = useState('');
   const period = 100;
 
