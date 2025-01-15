@@ -31,7 +31,7 @@ const links = [
     {
         name: 'contact',
         path: '/contact'
-    }
+    },
     {
         name: 'Hire Me',
         path: '/contact'
