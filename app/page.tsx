@@ -118,7 +118,7 @@ export default function Home() {
 
           <div className="mt-10 flex flex-wrap gap-5">
             <a
-              href="https://drive.google.com/file/d/1JClqRE1D-BdYIYJ-Sy4ZthC7Hqe7JDDl/view"
+              href="https://drive.google.com/file/d/1ZCCkzwfgM8CAjuFP92-UkxqzcA6XEgkd/view?usp=sharing"
               target="_blank"
               rel="noopener noreferrer"
               className="hero-primary-btn inline-flex h-12 items-center gap-3 rounded bg-gradient-to-r from-[#087bff] via-[#168dff] to-[#4b6dff] px-8 text-sm font-semibold text-white shadow-[0_0_26px_rgba(39,112,255,0.35)]"
