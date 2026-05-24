@@ -23,7 +23,10 @@ const SYNONYMS: Record<string, string[]> = {
   skill: ["skills", "tech", "technologies", "stack", "know", "proficient", "proficiency",
     "proficient in", "good at", "expertise", "competency", "capable", "capabilities",
     "tool", "tools", "framework", "frameworks", "language", "languages", "library",
-    "libraries", "database", "databases", "cloud", "devops"],
+    "libraries", "database", "databases", "cloud", "devops",
+    "embedding", "embeddings", "gemini", "gemini embedding", "vector",
+    "vector db", "vector database", "vectordb", "qdrant",
+    "semantic search", "hnsw", "cosine", "similarity"],
   // Experience-related
   experience: ["experiences", "work", "job", "role", "roles", "position", "career",
     "axis bank", "axis", "bank", "company", "employed", "employment", "internship",

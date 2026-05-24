@@ -80,7 +80,8 @@ const skills = [
   "Airflow", "Databricks", "Snowflake", "AWS", "Docker",
   "Jenkins", "Power BI", "FastAPI", "React", "Next.js",
   "Node.js", "LangChain", "Tailwind CSS", "PostgreSQL", "MongoDB",
-  "ChromaDB", "Git", "BM25", "Mistral AI", "Sarvam AI", "Groq Cloud",
+  "ChromaDB", "Qdrant", "Git", "BM25", "Mistral AI", "Sarvam AI", "Groq Cloud",
+  "Gemini Embeddings",
 ];
 
 const certificates = [
@@ -223,6 +224,43 @@ const baseKnowledge = [
     content: cert,
     metadata: { source: `portfolio-certificate-${i + 1}`, type: "certificate", title: `Certificate ${i + 1}` },
   })),
+  // ── Technology Deep-Dive: Gemini Embedding Model ──
+  {
+    id: "tech-gemini-embedding-overview",
+    content: "Gemini Embedding Model: Google's Gemini embedding models convert text into high-dimensional vector representations (embeddings) that capture semantic meaning. These embeddings are used for semantic search, document retrieval, clustering, and similarity matching in AI applications. The project uses gemini-embedding-001 (3072-dimensional vectors) via Google's free tier API (1,500 requests/day) for production-grade semantic search with zero cost. The Gemini Embedding API endpoint is https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent and accepts text input via a content.parts array, returning an embedding.values array of float64 numbers. Gemini embeddings are preferred over OpenAI embeddings in this project because they are completely free (no credit card required), provide higher dimensionality (3072 vs 1536 for text-embedding-3-small) enabling richer semantic representations, and integrate seamlessly with the Google AI Studio API key system.",
+    metadata: { source: "portfolio-tech-stack", type: "skill", title: "Gemini Embedding Model — Overview" },
+  },
+  {
+    id: "tech-gemini-embedding-config",
+    content: "Gemini Embedding Configuration in this project: The embedding provider is configured via environment variables — EMBEDDING_PROVIDER=gemini, EMBEDDING_MODEL=gemini-embedding-001, EMBEDDING_API_KEY (from Google AI Studio), and EMBEDDING_DIMENSION=3072. The system auto-detects Gemini when EMBEDDING_PROVIDER is 'gemini' or when EMBEDDING_API_KEY is provided without an OpenAI-compatible EMBEDDING_API_URL. The createEmbedding() function in lib/rag/http.ts handles the Gemini API call by POSTing to the generative language API with the model name and text content, parsing the response embedding.values array. During ingestion, embeddings are generated in batches of 20 documents to stay within rate limits, and during retrieval, each user query is embedded on-the-fly for vector similarity search against the stored document embeddings.",
+    metadata: { source: "portfolio-tech-stack", type: "skill", title: "Gemini Embedding — Configuration & Integration" },
+  },
+  {
+    id: "tech-gemini-embedding-details",
+    content: "Gemini Embedding Technical Details: Gemini offers two embedding models — gemini-embedding-001 (3072 dimensions, the default and most capable) and text-embedding-004 (768 dimensions, faster and cheaper for high-throughput use cases). The free tier allows 1,500 embedding requests per day, which is sufficient for portfolio-scale semantic search with ~60 knowledge base documents and occasional query embedding. Each embedding request can process up to 2,048 tokens of input text. The returned vectors use cosine similarity for distance measurement, which is the same distance metric configured in the Qdrant vector store. The project sets EMBEDDING_DIMENSION=3072 to match gemini-embedding-001, and this dimension is used when creating the Qdrant collection schema (vectors.size: 3072, distance: Cosine). The embedding pipeline includes a fallback chain: Gemini → OpenAI-compatible API → local Ollama, ensuring the system works across development and production environments.",
+    metadata: { source: "portfolio-tech-stack", type: "skill", title: "Gemini Embedding — Technical Specifications" },
+  },
+  // ── Technology Deep-Dive: Qdrant Vector Database ──
+  {
+    id: "tech-qdrant-overview",
+    content: "Qdrant Vector Database: Qdrant is an open-source, high-performance vector similarity search engine written in Rust. It stores and retrieves high-dimensional vectors (embeddings) with millisecond latency, making it ideal for semantic search, recommendation systems, and RAG (Retrieval-Augmented Generation) pipelines. Qdrant Cloud offers a free tier with 1GB storage and no time limit — sufficient for portfolio-scale knowledge bases with thousands of 3072-dimensional vectors. Unlike ChromaDB which experiences cold starts on free hosting platforms (Render free tier spins down after inactivity), Qdrant Cloud is always-on with no cold start latency, providing consistent sub-100ms search response times. Qdrant uses HNSW (Hierarchical Navigable Small World) graph-based indexing for approximate nearest neighbor search, configurable with cosine, euclidean, or dot-product distance metrics.",
+    metadata: { source: "portfolio-tech-stack", type: "skill", title: "Qdrant Vector Database — Overview" },
+  },
+  {
+    id: "tech-qdrant-config",
+    content: "Qdrant Configuration in this project: Qdrant is configured via environment variables — QDRANT_URL (the Qdrant Cloud cluster endpoint, e.g., https://xyz-example.eu-central.aws.cloud.qdrant.io), QDRANT_API_KEY (for authentication via the api-key header), and QDRANT_COLLECTION (default: abhishek_portfolio). The vector store selection is controlled by VECTOR_STORE=qdrant. The project's lib/rag/config.ts exports isQdrantConfigured() which checks for both QDRANT_URL and QDRANT_API_KEY, and getActiveVectorStore() which auto-detects Qdrant when configured, falling back to ChromaDB otherwise. The Qdrant REST API is used directly (no SDK dependency) for collection creation, point upserts, and vector search — keeping the bundle lightweight. Collection creation uses PUT /collections/{name} with vectors.size matching the embedding dimension (3072 for Gemini) and distance: Cosine.",
+    metadata: { source: "portfolio-tech-stack", type: "skill", title: "Qdrant — Configuration & Integration" },
+  },
+  {
+    id: "tech-qdrant-ingestion",
+    content: "Qdrant Ingestion Pipeline Details: During knowledge base ingestion, documents are chunked using LangChain's RecursiveCharacterTextSplitter (chunkSize: 900, chunkOverlap: 120), then each chunk is embedded via the Gemini embedding API. The resulting vectors and payloads are upserted into Qdrant in batches of 100 points per API call. Each Qdrant point has: an unsigned integer ID (Qdrant REST requires uint or UUID), a 3072-dimensional float vector, and a payload containing the original docId (string), content (text), and metadata (source, type, title). The batch size of 100 is optimized for the free tier's request limits. During retrieval (lib/rag/http.ts searchQdrant), a user query is embedded and POSTed to /collections/{name}/points/search with the vector, limit (top_k), and with_payload: true — returning scored results with content and metadata. The retrieval layer in lib/rag/retrieval.ts then merges vector results with keyword-based exact matches for hybrid search.",
+    metadata: { source: "portfolio-tech-stack", type: "skill", title: "Qdrant — Ingestion & Retrieval Pipeline" },
+  },
+  {
+    id: "tech-qdrant-advantages",
+    content: "Why Qdrant over ChromaDB in this project: (1) Always-on availability — Qdrant Cloud free tier has no cold starts, eliminating the 15-30 second spin-up latency experienced with ChromaDB on Render's free tier. (2) Performance — Rust-based engine with HNSW indexing delivers faster search than ChromaDB's hnswlib. (3) Production readiness — Qdrant offers built-in sharding, replication, and monitoring dashboards even on the free tier. (4) Payload filtering — Qdrant supports rich payload-based filtering alongside vector search, enabling metadata-scoped queries. (5) API simplicity — REST API with clean JSON contracts, no SDK dependency needed. The project uses a dual-store architecture where VECTOR_STORE environment variable switches between Qdrant and ChromaDB, with the retrieval.ts file implementing separate retrieveFromQdrant() and retrieveFromChroma() functions that are selected at runtime based on configuration. Both paths fall back to keyword-based search if the vector store is unreachable.",
+    metadata: { source: "portfolio-tech-stack", type: "skill", title: "Qdrant — Advantages & Architecture Decisions" },
+  },
   // ── HR Q&A ──
   {
     id: "hr-qa-1",
