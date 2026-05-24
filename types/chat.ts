@@ -15,7 +15,7 @@ export type RagDocument = {
   content: string;
   metadata: {
     source: string;
-    type: "profile" | "project" | "skill" | "certificate" | "resume" | "github" | "document";
+    type: "profile" | "project" | "skill" | "certificate" | "resume" | "github" | "document" | "experience" | "education" | "achievement";
     title?: string;
   };
 };
