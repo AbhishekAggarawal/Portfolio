@@ -1,0 +1,36 @@
+# ── Render Blueprint ────────────────────────────────────────────────────────
+# Deploy ChromaDB on Render — free tier (spins down after 15 min of inactivity)
+#
+# ONE-CLICK SETUP:
+# 1. Push this file to GitHub
+# 2. https://render.com → "New" → "Blueprint" → connect your GitHub repo
+# 3. Render auto-detects this file and creates the ChromaDB service + disk
+# 4. After ~2 min, copy the .onrender.com URL into your Vercel CHROMA_URL env var
+#
+# NOTE: Free tier cold starts take 15-30s. The RAG pipeline handles this
+# gracefully — it falls back to keyword search if ChromaDB is waking up.
+# ───────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: abhishek-chromadb
+    runtime: image
+    image:
+      url: chromadb/chroma:latest
+    envVars:
+      - key: IS_PERSISTENT
+        value: "TRUE"
+      - key: PERSIST_DIRECTORY
+        value: /chroma/data
+      - key: CHROMA_SERVER_AUTHN_CREDENTIALS
+        value: ""  # Set a token value here if you want auth
+      - key: CHROMA_SERVER_AUTHN_PROVIDER
+        value: ""  # Set "token" if you added credentials above
+      - key: CHROMA_SERVER_CORS_ALLOW_ORIGINS
+        value: '["*"]'  # Allow requests from Vercel
+    disk:
+      name: chroma-storage
+      mountPath: /chroma/data
+      sizeGB: 1  # Increase if portfolio data grows beyond 1 GB
+    healthCheckPath: /api/v1/heartbeat
+    plan: free  # Change to "starter" ($7/mo) to prevent cold starts

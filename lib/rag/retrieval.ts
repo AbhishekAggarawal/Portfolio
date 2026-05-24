@@ -1,6 +1,6 @@
 import { baseKnowledge } from "@/lib/rag/profile-data";
 import { ragConfig } from "@/lib/rag/config";
-import { chromaHeaders, createEmbedding } from "@/lib/rag/http";
+import { chromaHeaders, createEmbedding, fetchWithTimeout, CHROMA_TIMEOUT_MS } from "@/lib/rag/http";
 import type { RagDocument } from "@/types/chat";
 
 // ── Tokenizer ──
@@ -170,6 +170,7 @@ function ensureCategoryCoverage(
 }
 
 // ── ChromaDB retrieval ──
+// Uses fetchWithTimeout to handle Render free tier cold starts (15-30s spin-up)
 async function retrieveFromChroma(query: string): Promise<RagDocument[]> {
   const embedding = await createEmbedding(query);
 
@@ -177,37 +178,50 @@ async function retrieveFromChroma(query: string): Promise<RagDocument[]> {
     return [];
   }
 
-  const response = await fetch(
-    `${ragConfig.chromaUrl}/api/v1/collections/${ragConfig.chromaCollection}/query`,
-    {
-      method: "POST",
-      headers: chromaHeaders(),
-      body: JSON.stringify({
-        query_embeddings: [embedding],
-        n_results: ragConfig.maxRetrievedDocs,
-        include: ["documents", "metadatas"],
-      }),
-    },
-  );
+  try {
+    const response = await fetchWithTimeout(
+      `${ragConfig.chromaUrl}/api/v1/collections/${ragConfig.chromaCollection}/query`,
+      {
+        method: "POST",
+        headers: chromaHeaders(),
+        body: JSON.stringify({
+          query_embeddings: [embedding],
+          n_results: ragConfig.maxRetrievedDocs,
+          include: ["documents", "metadatas"],
+        }),
+        timeoutMs: CHROMA_TIMEOUT_MS,
+      },
+    );
 
-  if (!response.ok) {
+    if (!response.ok) {
+      // Log the error in production for debugging, but fall back gracefully
+      console.warn(
+        `[retrieveFromChroma] ChromaDB returned ${response.status} — falling back to keyword search`,
+      );
+      return [];
+    }
+
+    const data = (await response.json()) as {
+      ids?: string[][];
+      documents?: string[][];
+      metadatas?: Array<Array<RagDocument["metadata"]>>;
+    };
+
+    return (data.documents?.[0] ?? []).map((content, index) => ({
+      id: data.ids?.[0]?.[index] ?? `chroma-${index}`,
+      content,
+      metadata: data.metadatas?.[0]?.[index] ?? {
+        source: "chroma",
+        type: "document",
+      },
+    }));
+  } catch (err) {
+    // Timeout (AbortError) or network error → fall back to keyword search
+    console.warn(
+      `[retrieveFromChroma] ChromaDB unreachable: ${err instanceof Error ? err.message : "unknown"} — falling back to keyword search`,
+    );
     return [];
   }
-
-  const data = (await response.json()) as {
-    ids?: string[][];
-    documents?: string[][];
-    metadatas?: Array<Array<RagDocument["metadata"]>>;
-  };
-
-  return (data.documents?.[0] ?? []).map((content, index) => ({
-    id: data.ids?.[0]?.[index] ?? `chroma-${index}`,
-    content,
-    metadata: data.metadatas?.[0]?.[index] ?? {
-      source: "chroma",
-      type: "document",
-    },
-  }));
 }
 
 // ── Edge case detection: queries the keyword system should always handle ──
