@@ -1,6 +1,6 @@
 import { baseKnowledge } from "@/lib/rag/profile-data";
-import { ragConfig } from "@/lib/rag/config";
-import { chromaHeaders, createEmbedding, fetchWithTimeout, CHROMA_TIMEOUT_MS } from "@/lib/rag/http";
+import { ragConfig, getActiveVectorStore, isQdrantConfigured } from "@/lib/rag/config";
+import { chromaHeaders, createEmbedding, fetchWithTimeout, CHROMA_TIMEOUT_MS, searchQdrant } from "@/lib/rag/http";
 import type { RagDocument } from "@/types/chat";
 
 // ── Tokenizer ──
@@ -194,7 +194,6 @@ async function retrieveFromChroma(query: string): Promise<RagDocument[]> {
     );
 
     if (!response.ok) {
-      // Log the error in production for debugging, but fall back gracefully
       console.warn(
         `[retrieveFromChroma] ChromaDB returned ${response.status} — falling back to keyword search`,
       );
@@ -216,9 +215,33 @@ async function retrieveFromChroma(query: string): Promise<RagDocument[]> {
       },
     }));
   } catch (err) {
-    // Timeout (AbortError) or network error → fall back to keyword search
     console.warn(
       `[retrieveFromChroma] ChromaDB unreachable: ${err instanceof Error ? err.message : "unknown"} — falling back to keyword search`,
+    );
+    return [];
+  }
+}
+
+// ── Qdrant retrieval ──
+// Qdrant Cloud free tier is always-on (no cold starts), 15s timeout is sufficient
+async function retrieveFromQdrant(query: string): Promise<RagDocument[]> {
+  const embedding = await createEmbedding(query);
+
+  if (!embedding.length) {
+    return [];
+  }
+
+  try {
+    const results = await searchQdrant(embedding, ragConfig.maxRetrievedDocs);
+
+    return results.map((hit) => ({
+      id: hit.docId,  // original string ID stored in payload.docId
+      content: hit.content,
+      metadata: (hit.metadata ?? { source: "qdrant", type: "document" }) as RagDocument["metadata"],
+    }));
+  } catch (err) {
+    console.warn(
+      `[retrieveFromQdrant] Qdrant unreachable: ${err instanceof Error ? err.message : "unknown"} — falling back to keyword search`,
     );
     return [];
   }
@@ -247,9 +270,34 @@ const ALWAYS_MATCH_QUERIES: Record<string, string[]> = {
 
 function exactMatchBoost(query: string): RagDocument[] {
   const normalized = query.toLowerCase().trim();
-  const matchedIds = ALWAYS_MATCH_QUERIES[normalized];
-  if (!matchedIds) return [];
-  return baseKnowledge.filter((doc) => matchedIds.includes(doc.id));
+
+  // Try exact match first
+  const exactMatchedIds = ALWAYS_MATCH_QUERIES[normalized];
+  if (exactMatchedIds) {
+    return baseKnowledge.filter((doc) => exactMatchedIds.includes(doc.id));
+  }
+
+  // Fuzzy match: check if any query keyword appears in any ALWAYS_MATCH_QUERIES key
+  const queryTokens = normalized
+    .replace(/[^a-z0-9+#. ]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const matchedIds = new Set<string>();
+  for (const [key, ids] of Object.entries(ALWAYS_MATCH_QUERIES)) {
+    for (const token of queryTokens) {
+      if (token.length >= 3 && (key.includes(token) || token.includes(key) || key === token)) {
+        for (const id of ids) matchedIds.add(id);
+        break;
+      }
+    }
+  }
+
+  if (matchedIds.size > 0) {
+    return baseKnowledge.filter((doc) => matchedIds.has(doc.id));
+  }
+
+  return [];
 }
 
 // ── Main retrieval ──
@@ -257,22 +305,27 @@ export async function retrieveContext(query: string) {
   // Step 0: Check for exact-match queries that must always return specific docs
   const exactMatches = exactMatchBoost(query);
 
-  // Step 1: Try ChromaDB vector search
-  let chromaDocs: RagDocument[] = [];
+  // Step 1: Try vector search (Qdrant if configured, else ChromaDB)
+  let vectorDocs: RagDocument[] = [];
+  const activeStore = getActiveVectorStore();
+
   try {
-    chromaDocs = await retrieveFromChroma(query);
+    if (activeStore === "qdrant" && isQdrantConfigured()) {
+      vectorDocs = await retrieveFromQdrant(query);
+    } else {
+      vectorDocs = await retrieveFromChroma(query);
+    }
   } catch {
-    chromaDocs = [];
+    vectorDocs = [];
   }
 
   // Step 2: Detect query intent
   const intents = detectIntent(query);
-  const targetTypes = normalizeDocTypes(intents);
 
-  // Step 3: If ChromaDB returned results, use them (they're semantically best)
+  // Step 3: If vector store returned results, use them (they're semantically best)
   let docs: RagDocument[];
-  if (chromaDocs.length > 0) {
-    docs = chromaDocs;
+  if (vectorDocs.length > 0) {
+    docs = vectorDocs;
   } else {
     // Step 4: Keyword-based fallback with scored ranking
     const scored = baseKnowledge

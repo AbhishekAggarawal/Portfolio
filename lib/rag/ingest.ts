@@ -1,6 +1,6 @@
 import { baseKnowledge } from "@/lib/rag/profile-data";
-import { ragConfig } from "@/lib/rag/config";
-import { chromaHeaders, createEmbedding } from "@/lib/rag/http";
+import { ragConfig, getActiveVectorStore, isQdrantConfigured } from "@/lib/rag/config";
+import { chromaHeaders, createEmbedding, createQdrantCollection, upsertQdrant } from "@/lib/rag/http";
 import type { RagDocument } from "@/types/chat";
 
 async function dynamicImport<T>(specifier: string): Promise<T> {
@@ -44,6 +44,36 @@ export async function ingestPortfolioKnowledge(extraDocs: RagDocument[] = []) {
   const docs = await splitDocuments([...baseKnowledge, ...extraDocs]);
   const embeddings = await Promise.all(docs.map((doc) => createEmbedding(doc.content)));
 
+  const activeStore = getActiveVectorStore();
+
+  if (activeStore === "qdrant" && isQdrantConfigured()) {
+    // ── Qdrant Cloud ingestion ──
+    await createQdrantCollection();
+
+    const points = docs.map((doc, index) => ({
+      id: index,  // sequential integer (Qdrant REST requires unsigned int or UUID)
+      vector: embeddings[index],
+      payload: {
+        docId: doc.id,  // store original string ID in payload
+        content: doc.content,
+        metadata: doc.metadata,
+      },
+    }));
+
+    // Upsert in batches of 100 (Qdrant free tier handles this well)
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < points.length; i += BATCH_SIZE) {
+      await upsertQdrant(points.slice(i, i + BATCH_SIZE));
+    }
+
+    return {
+      collection: ragConfig.qdrantCollection,
+      store: "qdrant",
+      documents: docs.length,
+    };
+  }
+
+  // ── ChromaDB ingestion (default / fallback) ──
   const collectionResponse = await fetch(`${ragConfig.chromaUrl}/api/v1/collections`, {
     method: "POST",
     headers: chromaHeaders(),
@@ -74,6 +104,7 @@ export async function ingestPortfolioKnowledge(extraDocs: RagDocument[] = []) {
 
   return {
     collection: ragConfig.chromaCollection,
+    store: "chroma",
     documents: docs.length,
   };
 }

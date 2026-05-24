@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { ragConfig } from "@/lib/rag/config";
-import { chromaHeaders } from "@/lib/rag/http";
+import { ragConfig, getActiveVectorStore, isQdrantConfigured } from "@/lib/rag/config";
+import { chromaHeaders, qdrantHeaders } from "@/lib/rag/http";
 
 export const runtime = "nodejs";
 
@@ -19,16 +19,35 @@ async function checkUrl(url: string, timeoutMs = 2500, headers?: Record<string, 
 }
 
 export async function GET() {
-  const [chroma, ollama] = await Promise.all([
+  const activeStore = getActiveVectorStore();
+  const isQdrant = activeStore === "qdrant" && isQdrantConfigured();
+
+  const [chromaOk, qdrantOk, ollamaOk] = await Promise.all([
+    // ChromaDB heartbeat (only relevant when using ChromaDB)
     checkUrl(`${ragConfig.chromaUrl}/api/v1/heartbeat`, 2500, chromaHeaders()),
-    ragConfig.embeddingApiUrl ? Promise.resolve(true) : checkUrl(`${ragConfig.ollamaBaseUrl}/api/tags`),
+    // Qdrant health check (only relevant when using Qdrant)
+    isQdrant
+      ? checkUrl(`${ragConfig.qdrantUrl}/healthz`, 2500, qdrantHeaders())
+      : Promise.resolve(false),
+    // Local Ollama (dev only)
+    ragConfig.embeddingApiUrl
+      ? Promise.resolve(true) // cloud embeddings — always available
+      : checkUrl(`${ragConfig.ollamaBaseUrl}/api/tags`),
   ]);
 
   return NextResponse.json({
     groq: Boolean(ragConfig.groqApiKey),
-    chroma,
-    embedding: ollama,
-    collection: ragConfig.chromaCollection,
-    embeddingModel: ragConfig.embeddingModel,
+    vectorStore: {
+      active: activeStore,
+      qdrant: isQdrant ? { url: ragConfig.qdrantUrl, reachable: qdrantOk, collection: ragConfig.qdrantCollection } : undefined,
+      chroma: { url: ragConfig.chromaUrl, reachable: chromaOk, collection: ragConfig.chromaCollection },
+    },
+    embedding: {
+      ready: ragConfig.embeddingApiUrl ? true : ollamaOk,
+      provider: ragConfig.embeddingProvider,
+      model: ragConfig.embeddingModel,
+      dimension: ragConfig.embeddingDimension,
+    },
+    groqModel: ragConfig.groqModel,
   });
 }
