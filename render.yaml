@@ -1,14 +1,27 @@
 # ── Render Blueprint ────────────────────────────────────────────────────────
-# Deploy ChromaDB on Render — free tier (spins down after 15 min of inactivity)
+# Deploy ChromaDB on Render for vector search (OPTIONAL — Path B only).
 #
-# ONE-CLICK SETUP:
-# 1. Push this file to GitHub
-# 2. https://render.com → "New" → "Blueprint" → connect your GitHub repo
-# 3. Render auto-detects this file and creates the ChromaDB service + disk
-# 4. After ~2 min, copy the .onrender.com URL into your Vercel CHROMA_URL env var
+# ⚠️  FREE TIER DOES NOT SUPPORT PERSISTENT DISKS.
+#     You MUST use the "starter" plan ($7/mo) or this will fail with:
+#     "services[0] disks are not supported for free tier services"
 #
-# NOTE: Free tier cold starts take 15-30s. The RAG pipeline handles this
-# gracefully — it falls back to keyword search if ChromaDB is waking up.
+# THE FREE PATH (recommended):
+#     Skip this entire file. Deploy ONLY on Vercel with GROQ_API_KEY.
+#     The chatbot works without ChromaDB — it uses keyword + synonym + intent
+#     matching against 53 baseKnowledge docs compiled into the app bundle.
+#     See RAG_DEPLOYMENT.md for the 5-minute, $0/month setup.
+#
+# IF YOU WANT VECTOR SEARCH:
+#     Change `plan` below to "starter", then:
+#     1. https://render.com → "New" → "Blueprint" → connect your GitHub repo
+#     2. Render auto-detects this file and creates the ChromaDB service + disk
+#     3. After ~2 min, copy the .onrender.com URL into your Vercel env vars:
+#        CHROMA_URL, EMBEDDING_API_KEY, EMBEDDING_API_URL, EMBEDDING_MODEL
+#     4. Run: npx tsx scripts/ingest-cloud.ts
+#
+# NOTE: Starter plan eliminates cold starts. Free tier (if disks were supported)
+#       would have 15-30s cold starts — the RAG pipeline handles this via
+#       AbortController timeouts and keyword fallback.
 # ───────────────────────────────────────────────────────────────────────────
 
 services:
@@ -33,4 +46,4 @@ services:
       mountPath: /chroma/data
       sizeGB: 1  # Increase if portfolio data grows beyond 1 GB
     healthCheckPath: /api/v1/heartbeat
-    plan: free  # Change to "starter" ($7/mo) to prevent cold starts
+    plan: starter  # ⚠️ Required — free tier does NOT support disks

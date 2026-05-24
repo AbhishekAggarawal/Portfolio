@@ -1,6 +1,6 @@
 # ☁️ RAG Chatbot — Cloud Deployment Guide
 
-Follow this guide to deploy the RAG pipeline so anyone on the internet can use the portfolio chatbot.
+Follow this guide to deploy the portfolio chatbot so anyone on the internet can use it.
 
 ---
 
@@ -8,48 +8,122 @@ Follow this guide to deploy the RAG pipeline so anyone on the internet can use t
 
 ```
 User Browser → Vercel (Next.js) → Groq Cloud (LLM)
-                    ↓                    ↑
-              ChromaDB Cloud     OpenAI Embeddings
-              (Render/Railway)   (text-embedding-3-small)
+                     ↓
+          Keyword Fallback Retrieval
+          (53 baseKnowledge docs in app bundle)
 ```
 
-| Component | Provider | Cost | 
+There are **two deployment paths** — choose based on your budget and quality needs:
+
+| | Path A: Free | Path B: Vector Search |
 |---|---|---|
-| Frontend + API routes | **Vercel** (Hobby/Pro) | Free tier works |
-| LLM inference | **Groq Cloud** (`llama-3.1-8b-instant`) | Free tier (generous limits) |
-| Embeddings | **OpenAI** (`text-embedding-3-small`) | ~$0.02 per 1M tokens (ingest once, query cheap) |
-| Vector DB | **Render** / **Railway** (ChromaDB) | Free tier (1 instance) |
+| **Cost** | $0/month | ~$7.02/month |
+| **Retrieval** | Keyword + synonym + intent matching | OpenAI embeddings + ChromaDB vector search |
+| **Quality** | Good (exact + semantic keyword) | Better (dense vector similarity) |
+| **Services** | Vercel (Hobby) + Groq (free) | Vercel + Groq + Render (Starter $7/mo) + OpenAI |
+| **Credit card needed?** | No | Yes (Render + OpenAI) |
+| **Setup time** | 5 minutes | 20 minutes |
+
+> **Path A works today** — no changes needed. When ChromaDB is unreachable, [`retrieveContext()`](lib/rag/retrieval.ts:256) automatically falls back to keyword search with synonym expansion, intent detection, exact-match boosting, and category coverage across all 53 `baseKnowledge` documents.
 
 ---
 
-## Step-by-Step Deployment
+## Path A: Free Deployment (Recommended)
 
-### Step 1: Deploy ChromaDB on Render (2 minutes)
+Only two services — both have free tiers with no credit card required.
 
-[`render.yaml`](render.yaml) in this repo defines the service. 
+### What You Get
+
+The keyword fallback in [`retrieval.ts`](lib/rag/retrieval.ts) is not a "dumb" fallback — it uses:
+
+| Step | Technique | What It Does |
+|---|---|---|
+| 1 | ChromaDB attempt | Tries vector search (skipped if no `CHROMA_URL`) |
+| 2 | Exact-match boost | Checks if query literally matches any document content |
+| 3 | Keyword scoring | Tokenizes query + documents, scores by word overlap |
+| 4 | Synonym expansion | Maps common terms to document vocabulary (e.g., "projects" → also matches "work", "portfolio") |
+| 5 | Intent detection | Maps query type to expected document categories |
+| 6 | Category coverage | Ensures at least one doc per relevant type is included |
+
+This handles virtually all portfolio-related questions (projects, skills, experience, education, contact, HR questions).
+
+### Step 1: Get a Groq API Key (Free)
+
+1. Go to [console.groq.com/keys](https://console.groq.com/keys)
+2. Create a free account — no credit card needed
+3. Copy your API key (starts with `gsk_`)
+
+### Step 2: Set Up Gmail App Password (for Contact Form)
+
+1. Enable [2-Step Verification](https://myaccount.google.com/signinoptions/twostepverification) on your Google Account
+2. Go to [App Passwords](https://myaccount.google.com/apppasswords)
+3. Select "Mail" → "Other" → name it "Portfolio"
+4. Copy the 16-character password (no spaces)
+
+### Step 3: Deploy on Vercel
+
+1. Push your repo to GitHub
+2. Go to [vercel.com](https://vercel.com) → "Import Project"
+3. Framework: **Next.js** (auto-detected)
+4. Add **only these 5 environment variables**:
+
+| Variable | Value |
+|---|---|
+| `GROQ_API_KEY` | `gsk_your_key_from_step_1` |
+| `GROQ_MODEL` | `llama-3.1-8b-instant` |
+| `EMAIL_USER` | `your_email@gmail.com` |
+| `EMAIL_PASSWORD` | `your_16_char_app_password` |
+| `RECEIVER_EMAIL` | `your_email@gmail.com` |
+
+5. Deploy. Vercel assigns a URL like `your-project.vercel.app`.
+
+### Step 4: Verify
+
+1. Open your Vercel URL
+2. Click the chat assistant (bottom-right bubble)
+3. Ask: *"What are Abhishek's projects?"*
+4. You should see a streaming response with project details
+5. Test the contact form — send yourself a test message
+
+**Done!** Your portfolio with AI chatbot is live at $0/month.
+
+---
+
+## Path B: Vector Search (Better Quality, ~$7/mo)
+
+Add ChromaDB + OpenAI embeddings for dense vector similarity search. This gives better results for vague or complex queries.
+
+> **⚠️ Render free tier does NOT support persistent disks.** You need the **Starter plan ($7/mo)** for ChromaDB. See [Render pricing](https://render.com/pricing).
+
+### Service Breakdown
+
+| Component | Provider | Cost | 
+|---|---|---|
+| Frontend + API routes | **Vercel** (Hobby) | Free |
+| LLM inference | **Groq Cloud** (`llama-3.1-8b-instant`) | Free |
+| Embeddings | **OpenAI** (`text-embedding-3-small`) | ~$0.02/1M tokens |
+| Vector DB | **Render** (Starter, $7/mo) | ChromaDB with 1GB disk |
+
+### Step B1: Deploy ChromaDB on Render
+
+> **Requires Starter plan ($7/mo).** Free tier will fail with "disks are not supported."
 
 1. Go to [render.com](https://render.com) → "New" → "Blueprint"
 2. Connect your GitHub repo
-3. Render auto-detects [`render.yaml`](render.yaml) — it will create:
+3. Render auto-detects [`render.yaml`](render.yaml) — it creates:
    - A **Web Service** running `chromadb/chroma:latest`
    - A **1 GB persistent disk** for your vectors
-4. After deployment, copy the **URL** (e.g., `https://abhishek-chromadb.onrender.com`)
+4. **Before deploying**, change `plan: free` to `plan: starter` in [`render.yaml`](render.yaml)
+5. After deployment, copy the URL (e.g., `https://abhishek-chromadb.onrender.com`)
 
-> **Alternative: Railway** — Deploy `chromadb/chroma` Docker image, expose port 8000, add a persistent volume, and use the public URL.
+### Step B2: Get an OpenAI API Key
 
-### Step 2: Get API Keys
+1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Create an account (requires $5 minimum pre-payment)
+3. Generate an API key (starts with `sk-`)
 
-| Key | Where | 
-|---|---|
-| `GROQ_API_KEY` | [console.groq.com/keys](https://console.groq.com/keys) — create free account |
-| `EMBEDDING_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) — create paid account ($5 minimum) |
-| `RAG_INGEST_TOKEN` | Generate a random string: `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"` |
+### Step B3: Ingest Data into ChromaDB
 
-### Step 3: Ingest Data into Cloud ChromaDB
-
-The ingestion script [`scripts/ingest-cloud.ts`](scripts/ingest-cloud.ts) **imports directly from [`lib/rag/profile-data.ts`](lib/rag/profile-data.ts) and [`lib/portfolio.ts`](lib/portfolio.ts)** — so it always uses your latest data. No hardcoded copies.
-
-**Windows (cmd):**
 ```cmd
 set CHROMA_URL=https://abhishek-chromadb.onrender.com
 set EMBEDDING_API_URL=https://api.openai.com/v1/embeddings
@@ -58,151 +132,75 @@ set EMBEDDING_MODEL=text-embedding-3-small
 npx tsx scripts/ingest-cloud.ts
 ```
 
-**Mac/Linux:**
-```bash
-export CHROMA_URL=https://abhishek-chromadb.onrender.com
-export EMBEDDING_API_URL=https://api.openai.com/v1/embeddings
-export EMBEDDING_API_KEY=sk-your_openai_key_here
-export EMBEDDING_MODEL=text-embedding-3-small
-npx tsx scripts/ingest-cloud.ts
-```
+### Step B4: Add These Extra Vercel Env Vars
 
-Expected output:
-```
-🔗 ChromaDB:      https://abhishek-chromadb.onrender.com
-📦 Collection:    abhishek_portfolio
-🧠 Embeddings:    text-embedding-3-small (via https://api.openai.com/v1/embeddings)
-📄 Source:        lib/rag/profile-data.ts (LIVE)
-📄 Documents:     53
-
-1/3  Creating/accessing collection...
-   ✓ Collection ready
-
-2/3  Generating embeddings (batches of 20)...
-   ⏳ 20/53 documents embedded
-   ⏳ 40/53 documents embedded
-   ⏳ 53/53 documents embedded
-   ✓ 53 embeddings generated
-
-3/3  Upserting into ChromaDB...
-
-✅ Successfully ingested 53 documents into "abhishek_portfolio"
-   ChromaDB URL: https://abhishek-chromadb.onrender.com
-   💡 Tip: Re-run this script whenever you update profile-data.ts or portfolio.ts
-```
-
-> **The script reads live TypeScript sources.** Update [`lib/portfolio.ts`](lib/portfolio.ts) or [`lib/rag/profile-data.ts`](lib/rag/profile-data.ts) anytime — just re-run `npx tsx scripts/ingest-cloud.ts` to sync ChromaDB.
-
-### Step 4: Deploy Frontend on Vercel
-
-1. Push your repo to GitHub
-2. Go to [vercel.com](https://vercel.com) → Import project
-3. Framework: **Next.js** (auto-detected)
-4. Add Environment Variables:
+On top of [Path A's 5 vars](#step-3-deploy-on-vercel-1), also add:
 
 | Variable | Value |
 |---|---|
-| `GROQ_API_KEY` | `gsk_your_key` |
-| `GROQ_MODEL` | `llama-3.1-8b-instant` |
-| `EMBEDDING_API_URL` | `https://api.openai.com/v1/embeddings` |
-| `EMBEDDING_API_KEY` | `sk-your_key` |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` |
 | `CHROMA_URL` | `https://abhishek-chromadb.onrender.com` |
 | `CHROMA_COLLECTION` | `abhishek_portfolio` |
-| `RAG_INGEST_TOKEN` | `your_random_secret` |
+| `EMBEDDING_API_URL` | `https://api.openai.com/v1/embeddings` |
+| `EMBEDDING_API_KEY` | `sk-your_openai_key` |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` |
+| `RAG_INGEST_TOKEN` | Random secret for `/api/ingest` |
 | `RAG_TOP_K` | `5` |
-| `EMAIL_USER` | `your_email@gmail.com` |
-| `EMAIL_PASSWORD` | `16_char_app_password` |
-| `RECEIVER_EMAIL` | `your_email@gmail.com` |
 
-5. Deploy. Vercel assigns a URL like `your-project.vercel.app`.
+### Step B5: Verify
 
-### Step 5: Verify
-
-1. Open your Vercel URL
-2. Click the chat assistant
-3. Ask: *"What are Abhishek's projects?"*
-4. You should see a streaming response with project details
-
----
-
-## What Changed for Cloud
-
-| File | Change |
-|---|---|
-| [`lib/rag/config.ts`](lib/rag/config.ts) | Added `EMBEDDING_PROVIDER`, default model changed to `text-embedding-3-small` |
-| [`lib/rag/http.ts`](lib/rag/http.ts) | OpenAI auto-detection: sends `input` + `encoding_format: float` for OpenAI, `prompt` for Ollama-compatible |
-| [`.env.example`](.env.example) | Documented all cloud variables with clear comments |
-| [`render.yaml`](render.yaml) | **New** — one-click ChromaDB deployment on Render |
-| [`scripts/ingest-cloud.ts`](scripts/ingest-cloud.ts) | **New** — ingestion script that imports live TypeScript sources directly, no hardcoded copies. Always in sync with [`profile-data.ts`](lib/rag/profile-data.ts) and [`portfolio.ts`](lib/portfolio.ts) |
-
-### Keeping ChromaDB in Sync
-
-The ingestion script reads **live** data. When you update:
-
-- [`lib/portfolio.ts`](lib/portfolio.ts) — add/modify projects
-- [`lib/rag/profile-data.ts`](lib/rag/profile-data.ts) — update skills, experience, HR Q&A
-
-Just re-run:
-
-```bash
-npx tsx scripts/ingest-cloud.ts
-```
-
-This re-generates embeddings from the latest sources and upserts them into your cloud ChromaDB. The old [`scripts/ingest-cloud.mjs`](scripts/ingest-cloud.mjs) was a hardcoded snapshot (now superseded). **Always use `ingest-cloud.ts`** to guarantee the vector DB matches your source files.
-
-### Files That Required Zero Changes
-
-- [`lib/rag/retrieval.ts`](lib/rag/retrieval.ts) — already fetches from `ragConfig.chromaUrl`
-- [`lib/rag/ingest.ts`](lib/rag/ingest.ts) — already calls `createEmbedding()` and ChromaDB API
-- [`lib/rag/profile-data.ts`](lib/rag/profile-data.ts) — data source, unchanged
-- [`lib/rag/prompt.ts`](lib/rag/prompt.ts) — prompt template, unchanged
-- [`lib/rag/groq.ts`](lib/rag/groq.ts) — already uses Groq Cloud API
-- [`app/api/chat/route.ts`](app/api/chat/route.ts) — already orchestrates retrieval + LLM
-
----
-
-## Cost Estimate (Monthly)
-
-| Service | Estimate |
-|---|---|
-| Vercel | $0 (Hobby) |
-| Groq Cloud | $0 (free tier) |
-| OpenAI Embeddings | ~$0.01 (ingested once + query embeddings) |
-| Render (ChromaDB) | $0 (free tier, spins down when idle) |
-| **Total** | **~$0.01/month** |
+Ask the chatbot a vague question like *"What does Abhishek do?"* — you should get richer, more contextually relevant answers than Path A.
 
 ---
 
 ## Troubleshooting
 
-### "Cloud embedding failed (401)"
-→ Your `EMBEDDING_API_KEY` is wrong or has insufficient credits. Check [platform.openai.com/usage](https://platform.openai.com/usage).
-
-### "ChromaDB returns empty results"
-→ Run `npx tsx scripts/ingest-cloud.ts` again. The Render free tier spins down after inactivity — first query may be slow.
-
 ### "Groq request failed"
-→ Verify `GROQ_API_KEY` starts with `gsk_`.
+→ Verify `GROQ_API_KEY` starts with `gsk_`. Free tier has generous rate limits.
 
-### Chatbot says "not enough information"
-→ The retrieval pipeline has a keyword fallback built into [`retrieval.ts`](lib/rag/retrieval.ts:264) — it doesn't strictly depend on ChromaDB. If you see this message, check that `baseKnowledge` is accessible in the Vercel runtime.
+### "Not enough information to answer" (Path A)
+→ The keyword fallback is working correctly — it means none of the 53 `baseKnowledge` docs matched your query well enough. Try rephrasing.
+
+### "ChromaDB returns empty results" (Path B)
+→ Run `npx tsx scripts/ingest-cloud.ts` again. Render free tier spins down after inactivity.
+
+### "Cloud embedding failed (401)" (Path B)
+→ Your `EMBEDDING_API_KEY` is wrong or has insufficient credits.
+
+### Contact form not sending
+→ Check that `EMAIL_PASSWORD` is a 16-char **App Password** (not your Gmail password). Gmail SMTP requires App Passwords when 2FA is enabled.
 
 ---
 
-## Local Development (Unchanged)
+## Local Development
 
-For local dev, you can still use Ollama + local ChromaDB:
+For local dev, use Ollama + local ChromaDB (no API keys needed):
 
 ```bash
 # Terminal 1: ChromaDB
 docker run -p 8000:8000 chromadb/chroma
 
-# Terminal 2: Ollama
+# Terminal 2: Ollama embeddings
 ollama pull nomic-embed-text
 
 # Terminal 3: Next.js
 npm run dev
 ```
 
-The code auto-falls back to Ollama when `EMBEDDING_API_URL` is empty. No config changes needed to switch between local and cloud.
+The code auto-falls back to Ollama when `EMBEDDING_API_URL` is empty.
+
+---
+
+## Files at a Glance
+
+| File | Role |
+|---|---|
+| [`lib/rag/retrieval.ts`](lib/rag/retrieval.ts) | Retrieval pipeline — ChromaDB vector search + keyword fallback |
+| [`lib/rag/profile-data.ts`](lib/rag/profile-data.ts) | 53 base knowledge documents (the fallback data source) |
+| [`lib/rag/groq.ts`](lib/rag/groq.ts) | Groq Cloud SSE streaming |
+| [`lib/rag/http.ts`](lib/rag/http.ts) | HTTP client with AbortController timeouts |
+| [`lib/rag/config.ts`](lib/rag/config.ts) | All env var defaults in one place |
+| [`lib/rag/prompt.ts`](lib/rag/prompt.ts) | System prompt + RAG prompt builder |
+| [`scripts/ingest-cloud.ts`](scripts/ingest-cloud.ts) | Ingestion script (reads live TS sources) |
+| [`vercel.json`](vercel.json) | Vercel function configs + CORS |
+| [`render.yaml`](render.yaml) | ChromaDB service definition for Render |
+| [`.env.example`](.env.example) | All env vars with setup instructions |
